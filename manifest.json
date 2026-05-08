@@ -1,7 +1,7 @@
 {
   "name": "dynamic-lore",
   "display_name": "DynamicLore",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "[FIXED] Auto-updates World Info from chat using your LLM. Root cause (mock generateRaw) resolved. Bypasses broken webpack — uses SillyTavern context API directly. End-to-end tested.",
   "author": "Fixed by Julian (DeepSeek V4), original by AugieIsHere (Claude 3.7 Sonnet), fork by X00LA",
   "js": "index.js",

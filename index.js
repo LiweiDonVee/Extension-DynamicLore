@@ -3,9 +3,11 @@
 
 const DL = (function () {
     const NAME = 'dynamicLore';
+    let analyzing = false;  // guard against concurrent analysis
 
     function ctx() { return SillyTavern.getContext(); }
     function ext() { return ctx().extensionSettings[NAME]; }
+    function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
     // ── init ──────────────────────────────────────────────────────────
     function init() {
@@ -57,21 +59,26 @@ const DL = (function () {
         ext().message_count = (ext().message_count || 0) + 1;
         if (ext().message_count >= ext().analysis_interval) {
             ext().message_count = 0;
-            analyzeCurrentChat();
+            if (!analyzing) analyzeCurrentChat();
         }
         ctx().saveSettingsDebounced();
     }
 
     // ── core analysis ─────────────────────────────────────────────────
     async function analyzeCurrentChat() {
+        if (analyzing) return;
         const chat = ctx().chat;
         if (!chat || chat.length < 2) return;
 
-        // last N messages
-        const recent = chat.slice(-10);
-        const text = recent.map(m =>
-            `${m.is_user ? '{{user}}' : '{{char}}'}: ${String(m.mes).replace(/<[^>]+>/g, '')}`
-        ).join('\n');
+        analyzing = true;
+        setLoading(true);
+
+        try {
+            // last N messages
+            const recent = chat.slice(-10);
+            const text = recent.map(m =>
+                `${m.is_user ? '{{user}}' : '{{char}}'}: ${String(m.mes).replace(/<[^>]+>/g, '')}`
+            ).join('\n');
 
         // include existing WI entries for context
         const currentWI = getCurrentWIData();
@@ -84,7 +91,7 @@ World Info rules:
 - Each entry must be SELF-CONTAINED — do not reference other entries.
 - Keep entries concise (50-100 tokens each).
 - Use Chinese AND English keywords for bilingual coverage.
-- Mark `isUpdate: true` + `targetUid` ONLY if updating an EXISTING entry.
+- Mark \`isUpdate: true\` + \`targetUid\` ONLY if updating an EXISTING entry.
 - New entries should NOT have targetUid.
 
 Keyword rules (IMPORTANT):
@@ -127,7 +134,6 @@ Output JSON:
   ]
 }`;
 
-        try {
             const raw = await ctx().generateRaw({
                 prompt: user,
                 systemPrompt: sys,
@@ -146,6 +152,9 @@ Output JSON:
         } catch (e) {
             console.error('[DynamicLore] Analysis failed:', e);
             toastr.warning('DynamicLore: Analysis failed. Check console.');
+        } finally {
+            analyzing = false;
+            setLoading(false);
         }
     }
 
@@ -273,7 +282,10 @@ Output JSON:
     }
 
     function mergeKeys(existing, adding) {
-        const set = new Set((Array.isArray(existing) ? existing : String(existing).split(',').map(k => k.trim())).filter(Boolean));
+        const safe = existing == null ? [] :
+            Array.isArray(existing) ? existing :
+            String(existing).split(',').map(k => k.trim());
+        const set = new Set(safe.filter(Boolean));
         for (const k of adding) set.add(k.trim());
         return [...set];
     }
@@ -285,15 +297,17 @@ Output JSON:
         if (target && c.worldInfo && c.worldInfo[target]) {
             return c.worldInfo[target];
         }
-        // use currently selected global WI
-        const names = c.getWorldInfoNames ? c.getWorldInfoNames() : [];
-        // Find the book whose entries are currently loaded
+        // No target set — scan for non-empty books
         if (c.worldInfo) {
-            for (const [name, data] of Object.entries(c.worldInfo)) {
-                if (data && data.entries && Object.keys(data.entries).length > 0) {
-                    return data;
-                }
+            const nonEmpty = Object.entries(c.worldInfo).filter(
+                ([_, d]) => d && d.entries && Object.keys(d.entries).length > 0
+            );
+            if (nonEmpty.length > 1) {
+                console.warn('[DynamicLore] Multiple WI books found, using first:', nonEmpty[0][0],
+                    '| Others:', nonEmpty.slice(1).map(e=>e[0]).join(', '),
+                    '| Set target: /dynamiclore book <name>');
             }
+            if (nonEmpty.length > 0) return nonEmpty[0][1];
         }
         return null;
     }
@@ -318,13 +332,12 @@ Output JSON:
             toastr.error('No target World Info book selected');
             return;
         }
-        const wi = getCurrentWIData();
-        if (!wi || !wi.entries) {
-            // create new book
+        let data = getCurrentWIData();
+        if (!data || !data.entries) {
+            // create new book — use it directly, don't re-scan
             c.worldInfo[bookName] = { entries: {}, originalData: {} };
+            data = c.worldInfo[bookName];
         }
-
-        const data = getCurrentWIData() || c.worldInfo[bookName];
 
         if (result.uid != null) {
             // update existing
@@ -402,30 +415,33 @@ Output JSON:
             <div class="drawer-header">
                 <span class="drawer-icon fa-solid fa-book-open fa-fw"></span>
                 <span class="drawer-title">DynamicLore</span>
-                <div class="drawer-close fa-solid fa-xmark" id="dl_close"></div>
+                <div class="drawer-close fa-solid fa-xmark" id="dynamiclore_close"></div>
             </div>
             <div class="drawer-content" style="padding:1em;">
                 <div style="display:flex;gap:8px;margin-bottom:12px;">
-                    <button id="dl_analyze" class="menu_button">Analyze Chat Now</button>
+                    <button id="dynamiclore_analyze" class="menu_button">Analyze Chat Now</button>
                     <label style="display:flex;align-items:center;gap:4px;font-size:0.9em;margin-left:12px;">
-                        <input type="checkbox" id="dl_auto" ${ext().auto_analyze ? 'checked' : ''}> Auto
+                        <input type="checkbox" id="dynamiclore_auto" ${ext().auto_analyze ? 'checked' : ''}> Auto
                     </label>
                     <span style="font-size:0.8em;opacity:0.6;align-self:center;">Every</span>
-                    <input type="number" id="dl_interval" value="${ext().analysis_interval}" min="1" max="50" style="width:50px;">
+                    <input type="number" id="dynamiclore_interval" value="${ext().analysis_interval}" min="1" max="50" style="width:50px;">
                     <span style="font-size:0.8em;opacity:0.6;align-self:center;">msgs</span>
                 </div>
-                <div id="dl_results"></div>
+                <div id="dynamiclore_results"></div>
+                <div id="dynamiclore_loading" style="display:none;text-align:center;padding:2em;opacity:0.6;">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Analyzing conversation&hellip;
+                </div>
             </div>`;
         body.appendChild(panel);
 
         // Event bindings
-        document.getElementById('dl_close').onclick = () => panel.style.display = 'none';
-        document.getElementById('dl_analyze').onclick = () => analyzeCurrentChat();
-        document.getElementById('dl_auto').onchange = function() {
+        document.getElementById('dynamiclore_close').onclick = () => panel.style.display = 'none';
+        document.getElementById('dynamiclore_analyze').onclick = () => analyzeCurrentChat();
+        document.getElementById('dynamiclore_auto').onchange = function() {
             ext().auto_analyze = this.checked;
             ctx().saveSettingsDebounced();
         };
-        document.getElementById('dl_interval').onchange = function() {
+        document.getElementById('dynamiclore_interval').onchange = function() {
             ext().analysis_interval = Math.max(1, parseInt(this.value) || 5);
             ext().message_count = 0;
             ctx().saveSettingsDebounced();
@@ -435,12 +451,19 @@ Output JSON:
         const extensionsMenu = document.getElementById('extensionsMenu');
         if (extensionsMenu) {
             const btn = document.createElement('div');
-            btn.id = 'dl_menu_btn';
+            btn.id = 'dynamiclore_menu_btn';
             btn.className = 'list-group-item';
             btn.innerHTML = '<i class="fa-solid fa-book-open fa-fw"></i> DynamicLore';
             btn.onclick = togglePanel;
             extensionsMenu.appendChild(btn);
         }
+    }
+
+    function setLoading(on) {
+        const el = document.getElementById('dynamiclore_loading');
+        if (el) el.style.display = on ? '' : 'none';
+        const btn = document.getElementById('dynamiclore_analyze');
+        if (btn) { btn.disabled = on; btn.textContent = on ? 'Analyzing...' : 'Analyze Chat Now'; }
     }
 
     function togglePanel() {
@@ -449,7 +472,7 @@ Output JSON:
     }
 
     function showResults(results) {
-        const container = document.getElementById('dl_results');
+        const container = document.getElementById('dynamiclore_results');
         if (!container) return;
 
         const { news, updates } = results;
@@ -475,28 +498,42 @@ Output JSON:
         const div = document.createElement('div');
         div.style.cssText = 'border:1px solid #444;border-radius:8px;padding:10px;margin:8px 0;background:#1a1a2e;';
         const conf = Math.round((r.confidence || 0.7) * 100);
-        div.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                <strong>${title}</strong>
-                <span style="font-size:0.8em;opacity:0.7;">${r.type || ''} · ${conf}% confidence</span>
-            </div>
-            <div><strong>${r.name}</strong></div>
-            ${isUpdate ? `<div style="margin-top:4px;font-size:0.8em;opacity:0.7;">Old: <span style="white-space:pre-wrap;">${r.oldContent.slice(0, 100)}...</span></div>` : ''}
-            <div style="margin-top:4px;white-space:pre-wrap;font-size:0.9em;">${r.newContent || r.content}</div>
-            <div style="margin-top:4px;font-size:0.8em;opacity:0.7;">Keys: ${r.newKeys || (r.keywords||[]).join(', ')}</div>
-            ${r.reason ? `<div style="font-size:0.8em;opacity:0.5;margin-top:2px;">Reason: ${r.reason}</div>` : ''}
-            <div style="margin-top:8px;display:flex;gap:6px;">
-                <button class="menu_button dl_accept">Accept</button>
-                <button class="menu_button menu_button_default dl_reject">Reject</button>
-            </div>`;
+        const keys = (r.newKeys || (r.keywords || []).join(', '));
+        const body = (r.newContent || r.content || '');
 
-        div.querySelector('.dl_accept').onclick = () => {
+        const html = [];
+        html.push('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">');
+        html.push(`<strong>${esc(title)}</strong>`);
+        html.push(`<span style="font-size:0.8em;opacity:0.7;">${esc(r.type || '')} · ${conf}% confidence</span>`);
+        html.push('</div>');
+        html.push(`<div><strong>${esc(r.name || '')}</strong></div>`);
+
+        if (isUpdate) {
+            const old = (r.oldContent || '').slice(0, 100);
+            html.push(`<div style="margin-top:4px;font-size:0.8em;opacity:0.7;">Old: ${esc(old)}...</div>`);
+        }
+
+        html.push(`<div style="margin-top:4px;white-space:pre-wrap;font-size:0.9em;">${esc(body)}</div>`);
+        html.push(`<div style="margin-top:4px;font-size:0.8em;opacity:0.7;">Keys: ${esc(keys)}</div>`);
+
+        if (r.reason) {
+            html.push(`<div style="font-size:0.8em;opacity:0.5;margin-top:2px;">Reason: ${esc(r.reason)}</div>`);
+        }
+
+        html.push('<div style="margin-top:8px;display:flex;gap:6px;">');
+        html.push('<button class="menu_button dynamiclore_accept">Accept</button>');
+        html.push('<button class="menu_button menu_button_default dynamiclore_reject">Reject</button>');
+        html.push('</div>');
+
+        div.innerHTML = html.join('');
+
+        div.querySelector('.dynamiclore_accept').onclick = () => {
             applyEntry(r);
             div.style.opacity = '0.5';
-            div.querySelector('.dl_accept').disabled = true;
-            div.querySelector('.dl_reject').disabled = true;
+            const a = div.querySelector('.dynamiclore_accept'); if (a) a.disabled = true;
+            const b = div.querySelector('.dynamiclore_reject'); if (b) b.disabled = true;
         };
-        div.querySelector('.dl_reject').onclick = () => div.remove();
+        div.querySelector('.dynamiclore_reject').onclick = () => div.remove();
 
         return div;
     }
