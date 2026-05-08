@@ -1,34 +1,12 @@
 {
   "name": "dynamic-lore",
   "display_name": "DynamicLore",
-  "version": "1.0.0",
-  "description": "Automatically updates World Info using your connected LLM",
-  "author": "Your Name",
-  "js": "dist/index.js",
+  "version": "2.0.0",
+  "description": "[FIXED] Auto-updates World Info from chat using your LLM. Root cause (mock generateRaw) resolved. Bypasses broken webpack — uses SillyTavern context API directly. End-to-end tested.",
+  "author": "Fixed by Julian (DeepSeek V4), original by AugieIsHere (Claude 3.7 Sonnet), fork by X00LA",
+  "js": "index.js",
   "css": "style.css",
   "requires": [],
   "optional": [],
-  "extension_api_version": 1,
-  "settings": [
-    {
-      "id": "auto_analyze",
-      "type": "checkbox",
-      "label": "Auto-analyze conversations",
-      "default": true
-    },
-    {
-      "id": "analysis_interval",
-      "type": "number",
-      "label": "Analysis interval (messages)",
-      "default": 5,
-      "min": 1,
-      "max": 50
-    },
-    {
-      "id": "auto_approve",
-      "type": "checkbox",
-      "label": "Auto-approve high confidence entries",
-      "default": false
-    }
-  ]
+  "extension_api_version": 1
 }
