@@ -1,0 +1,13 @@
+{
+  "name": "extension-dynamiclore",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reviewed, persistent World Info updates for SillyTavern",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "test": "node scripts/test.js",
+    "check": "node scripts/check.js"
+  },
+  "engines": { "node": ">=20" }
+}

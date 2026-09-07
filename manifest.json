@@ -1,12 +1,15 @@
 {
   "name": "dynamic-lore",
   "display_name": "DynamicLore",
-  "version": "2.0.1",
-  "description": "[FIXED] Auto-updates World Info from chat using your LLM. Root cause (mock generateRaw) resolved. Bypasses broken webpack — uses SillyTavern context API directly. End-to-end tested.",
-  "author": "Fixed by Julian (DeepSeek V4), original by AugieIsHere (Claude 3.7 Sonnet), fork by X00LA",
+  "version": "3.0.0",
+  "description": "Turn conversations into reviewed, editable World Info updates with chat-scoped history and undo.",
+  "author": "LiweiDonVee; original concept by AugieIsHere, upstream fork by X00LA",
   "js": "index.js",
   "css": "style.css",
   "requires": [],
   "optional": [],
-  "extension_api_version": 1
+  "extension_api_version": 1,
+  "minimum_client_version": "1.18.0",
+  "homePage": "https://github.com/LiweiDonVee/Extension-DynamicLore",
+  "loading_order": 100
 }
